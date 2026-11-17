@@ -1181,7 +1181,7 @@ lyrStream.build=function(){ const rend=L.canvas({pane:lyrStream.pane,tolerance:4
     pl.bindTooltip(`Stream (order ${it[3]})<br>Length ${it[1]} km<br>Upstream area ${it[2]} km²`,{sticky:true}); g.addLayer(pl); });
   lyrStream.leaf=g; };
 lyrStream.legendFn=()=>`<div class="li">${csw(()=>STREAM_COL,v=>{STREAM_COL=v||'#1f78b4';lyrStream.leaf.setStyle(streamStyle());},{cls:'sw line',extra:'border-top-width:3px',title:'Stream'})}Stream network (all orders)</div>`+
-  `<div class="li">Line width <select id="streamW" style="font-size:11px"><option value="3">3 px</option><option value="3.5">3.5 px</option><option value="4">4 px</option></select></div>`+
+  `<div class="li">Line width <select id="streamW" style="font-size:11px"><option value="1">1 px</option><option value="2">2 px</option><option value="3">3 px</option><option value="3.5">3.5 px</option><option value="4">4 px</option></select></div>`+
   `<div style="font-size:10.5px;color:#5f6b7a">Source: TDX-Hydro stream network (stream_main).</div>`;
 lyrStream.afterLegend=el=>{ const s=el.querySelector('#streamW'); if(!s) return; s.value=String(STREAM_W); s.onchange=()=>{ STREAM_W=+s.value; lyrStream.leaf.setStyle(streamStyle()); }; };
 /* end streams */
