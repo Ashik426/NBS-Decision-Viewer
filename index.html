@@ -839,10 +839,11 @@ Object.assign(DATA.bounds,{"prioH": [91.29686810768139, 20.583828466686096, 92.6
 var PRIO_META={"pal": {"High": {"1": "#67000d", "2": "#a50f15", "3": "#d7301f", "4": "#fc8d59", "5": "#fdd49e"}, "Medium": {"1": "#3f007d", "2": "#6a51a3", "3": "#8c6bb1", "4": "#bcbddc", "5": "#e0e0ef"}}, "labels": ["0 to 0.5 km", "0.5 to 1 km", "1 to 2 km", "2 to 5 km", "More than 5 km"], "area": {"High": [410.6, 302.8, 357.8, 422.7, 10.7], "Medium": [2445.0, 1220.4, 1818.3, 1499.6, 163.8]}};
 /* layer groups: 'priority' on top, everything else in 'Data layer' */
 var GRP={data:{open:true,on:true}};
-function lyrGroup(o){ return o&&o.group==='priority'?'priority':'data'; }
+function lyrGroup(o){ return o&&(o.group==='priority'||o.group==='boundary')?o.group:'data'; }
 function groupOn(o){ return lyrGroup(o)!=='data'||!GRP||GRP.data.on; }
-function prioFirst(){ const p=layers.filter(o=>lyrGroup(o)==='priority'), d=layers.filter(o=>lyrGroup(o)!=='priority'); layers.length=0; layers.push(...p,...d); }
+function prioFirst(){ const R={boundary:0,priority:1,data:2}; const s=layers.map((o,i)=>[o,i]).sort((a,b)=>R[lyrGroup(a[0])]-R[lyrGroup(b[0])]||a[1]-b[1]).map(x=>x[0]); layers.length=0; layers.push(...s); }
 function groupHeader(g){ const el=document.createElement('div');
+  if(g==='boundary'){ el.className='grpname'; el.style.cssText='color:#1f2d3d;font-weight:600'; el.textContent='Boundaries'; return el; }
   if(g==='priority'){ el.className='grpname'; el.style.cssText='color:#a50f15;font-weight:600'; el.textContent='Priority Areas'; return el; }
   const n=layers.filter(o=>lyrGroup(o)==='data').length;
   el.className='lyr grphead'; el.innerHTML=`<div class="lrow"><span class="tw">${GRP.data.open?'▾':'▸'}</span><input type="checkbox" ${GRP.data.on?'checked':''}><span class="lname" style="font-weight:600">Data layer</span><span style="font-size:10.5px;color:#5f6b7a;margin-left:auto">${n} layers</span></div>`;
@@ -1262,9 +1263,10 @@ function streamDistM(ll){ let best=1e12; (DATA.streams||[]).forEach(s=>{ const c
 function invDistM(ll){ let best=1e12; (DATA.inv||[]).forEach(p=>{ const d=map.distance(ll,[p[0],p[1]]); if(d<best) best=d; }); return best; }
 const lyrPrioH=prioLayer('prioH','High Priority Area','High',5);
 const lyrPrioM=prioLayer('prioM','Medium Priority Area','Medium',10);
+[lyrDist,lyrUpz,lyrUnion].forEach(o=>o.group='boundary');
 
 // drawing order (top first)
-[lyrPrioH,lyrPrioM,lyrDist,lyrUpz,lyrInv,lyrInvBuf,lyrUnion,lyrPts,lyrRoad,lyrStream,lyrPop,lyrHot,lyrLsi,lyrSlope,lyrChg,lyrCvi].forEach(o=>addLayerObj(o,false));
+[lyrDist,lyrUpz,lyrUnion,lyrPrioH,lyrPrioM,lyrInv,lyrInvBuf,lyrPts,lyrRoad,lyrStream,lyrPop,lyrHot,lyrLsi,lyrSlope,lyrChg,lyrCvi].forEach(o=>addLayerObj(o,false));
 const FULL=lyrUnion.leaf.getBounds(); map.fitBounds(FULL);
 document.getElementById('bFull').onclick=()=>map.fitBounds(FULL);
 
