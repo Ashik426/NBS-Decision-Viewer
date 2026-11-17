@@ -758,6 +758,26 @@ table.rank tr.cur td{background:var(--sel)}
 .idpop td:first-child{color:var(--muted)}
 .mapwrap{position:relative;grid-column:2;grid-row:3}
 #map{position:absolute;inset:0}
+
+#expOverlay{position:absolute;inset:0;z-index:1500;cursor:crosshair;display:none;touch-action:none}
+#expModal{position:fixed;inset:0;z-index:6000;background:rgba(20,30,40,.45);display:none;align-items:center;justify-content:center}
+#expModal .box{background:#fff;border-radius:6px;box-shadow:0 10px 40px rgba(0,0,0,.3);width:min(980px,96vw);max-height:94vh;display:grid;grid-template-columns:360px 1fr;overflow:hidden}
+#expModal .form{padding:12px 14px;overflow:auto;max-height:94vh;font-size:12px;border-right:1px solid var(--line)}
+#expModal .form h3{margin:0 0 8px;font-size:14px}
+#expModal .form label{display:block;margin:7px 0 2px;color:var(--muted);font-size:11px}
+#expModal .form input[type=text],#expModal .form textarea,#expModal .form select{width:100%;font:inherit;font-size:12px;padding:4px 5px;border:1px solid #c5ccd4;border-radius:3px}
+#expModal .form textarea{resize:vertical;min-height:38px}
+#expModal .row2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+#expModal .chk{display:flex;flex-wrap:wrap;gap:4px 12px;margin-top:3px}
+#expModal .chk label{display:flex;align-items:center;gap:4px;margin:0;color:var(--txt);font-size:12px}
+#expModal .leglist{max-height:150px;overflow:auto;border:1px solid #dde2e8;border-radius:3px;padding:4px 6px;margin-top:3px}
+#expModal .leglist label{display:flex;gap:5px;align-items:center;margin:2px 0;color:var(--txt);font-size:12px}
+#expModal .btns{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
+#expModal .prev{background:#eef1f4;display:flex;align-items:center;justify-content:center;padding:12px;overflow:auto;position:relative;min-height:300px}
+#expModal .prev canvas{max-width:100%;max-height:88vh;box-shadow:0 2px 12px rgba(0,0,0,.25);background:#fff}
+#expModal .msg{position:absolute;top:10px;left:10px;right:10px;font-size:12px;color:#2b3a4a;text-align:center}
+#expModal .note{font-size:10.5px;color:var(--muted);margin-top:4px}
+@media (max-width:760px){#expModal .box{grid-template-columns:1fr}#expModal .prev{min-height:220px}}
 </style>
 </head>
 <body>
@@ -793,6 +813,7 @@ table.rank tr.cur td{background:var(--sel)}
   </div>
   <div class="grp"><span class="glab">Export</span>
     <button class="rb" id="bCsv" title="Download the union statistics table as CSV"><svg viewBox="0 0 24 24" fill="none" stroke="#1d7a3a" stroke-width="2"><path d="M6 3h9l4 4v14H6z"/><path d="M9 13h7M9 17h7M9 9h3"/></svg>Union CSV</button>
+    <button class="rb" id="bExport" title="Export a print-ready map: drag a rectangle on the map, then choose title, paper and format"><svg viewBox="0 0 24 24" fill="none" stroke="#7a2b8c" stroke-width="2"><rect x="3" y="4" width="18" height="14" rx="1"/><path d="M3 14l5-4 4 3 3-2 6 5"/><path d="M12 21v-5M9.5 18.5L12 21l2.5-2.5"/></svg>Export Map</button>
   </div>
 </div>
 <aside id="left">
@@ -1264,6 +1285,244 @@ function invDistM(ll){ let best=1e12; (DATA.inv||[]).forEach(p=>{ const d=map.di
 const lyrPrioH=prioLayer('prioH','High Priority Area','High',5);
 const lyrPrioM=prioLayer('prioM','Medium Priority Area','Medium',10);
 [lyrDist,lyrUpz,lyrUnion].forEach(o=>o.group='boundary');
+
+
+/* ================= Map export (print layout) ================= */
+(()=>{ const l=document.createElement('link'); l.rel='stylesheet'; l.href='https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap'; document.head.appendChild(l); })();
+const EXP={sel:null,rect:null,p0:null,canvas:null};
+const EXP_PAPER={a4p:[210,297],a4l:[297,210],a3p:[297,420],a3l:[420,297]};
+const EXP_FONT='Poppins, "Segoe UI", Roboto, Arial, sans-serif';
+(function expInit(){
+  const mw=document.getElementById('map').parentElement;
+  const ov=document.createElement('div'); ov.id='expOverlay'; mw.appendChild(ov);
+  const md=document.createElement('div'); md.id='expModal'; md.innerHTML=`<div class="box">
+   <div class="form"><h3>Export map</h3>
+    <label>Title</label><textarea id="exTitle" rows="2"></textarea>
+    <div class="row2"><div><label>Paper</label><select id="exPaper"><option value="a4p">A4 portrait</option><option value="a4l">A4 landscape</option><option value="a3p">A3 portrait</option><option value="a3l">A3 landscape</option></select></div>
+    <div><label>Resolution</label><select id="exDpi"><option value="150">150 dpi (screen)</option><option value="200" selected>200 dpi</option><option value="300">300 dpi (print)</option></select></div></div>
+    <div class="row2"><div><label>Format</label><select id="exFmt"><option value="png">PNG image</option><option value="pdf">PDF</option><option value="jpg">JPG image</option></select></div>
+    <div><label>Basemap</label><select id="exBase"><option value="cur">Same as map</option><option value="gray">Light Gray Canvas</option><option value="topo">Topographic</option><option value="img">Imagery</option><option value="osm">OpenStreetMap</option><option value="none">None</option></select></div></div>
+    <div class="row2"><div><label>Line and symbol size</label><select id="exSym"><option value="0.6">Thin (60%)</option><option value="0.8" selected>Medium (80%)</option><option value="1">As on screen (100%)</option></select></div><div></div></div>
+    <label>Map elements</label><div class="chk">
+     <label><input type="checkbox" id="exN" checked>North arrow</label><label><input type="checkbox" id="exS" checked>Scale bar</label>
+     <label><input type="checkbox" id="exG" checked>Lat/long grid</label><label><input type="checkbox" id="exI" checked>Inset map</label><label><input type="checkbox" id="exL" checked>Legend</label></div>
+    <label>Layers in legend (only layers switched on are drawn)</label><div class="leglist" id="exLeg"></div>
+    <label>Data source</label><textarea id="exSrc" rows="2"></textarea>
+    <label>Footer</label><textarea id="exFoot" rows="2"></textarea>
+    <div class="note">The map fills the paper frame, so the area shown can be a little larger than your rectangle.</div>
+    <div class="btns"><button class="sbtn pri" id="exGo">Download</button><button class="sbtn" id="exPrev">Refresh preview</button><button class="sbtn" id="exRe">Select area again</button><button class="sbtn" id="exView">Use current view</button><button class="sbtn" id="exClose">Close</button></div>
+   </div><div class="prev"><div class="msg" id="exMsg"></div><div id="exCanvas"></div></div></div>`;
+  document.body.appendChild(md);
+  let p0=null;
+  const ll=e=>{ const r=ov.getBoundingClientRect(); return map.containerPointToLatLng([e.clientX-r.left,e.clientY-r.top]); };
+  ov.addEventListener('pointerdown',e=>{ ov.setPointerCapture(e.pointerId); p0=ll(e); if(EXP.rect) map.removeLayer(EXP.rect);
+    EXP.rect=L.rectangle([p0,p0],{color:'#d7191c',weight:2,dashArray:'6 4',fillOpacity:0.06,interactive:false}).addTo(map); });
+  ov.addEventListener('pointermove',e=>{ if(p0) EXP.rect.setBounds([p0,ll(e)]); });
+  ov.addEventListener('pointerup',e=>{ if(!p0) return; const b=L.latLngBounds(p0,ll(e)); p0=null; expSelectMode(false);
+    const a=map.latLngToContainerPoint(b.getNorthWest()), c=map.latLngToContainerPoint(b.getSouthEast());
+    if(Math.abs(a.x-c.x)<12||Math.abs(a.y-c.y)<12){ toast('That area is too small. Click Export Map and drag a larger rectangle.'); map.removeLayer(EXP.rect); EXP.rect=null; return; }
+    EXP.sel=b; expOpen(); });
+  document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&ov.style.display==='block'){ expSelectMode(false); toast('Export cancelled.'); } });
+  document.getElementById('bExport').onclick=()=>{ expSelectMode(true); toast('Drag a rectangle on the map around the area to export (Esc to cancel).',7000); };
+  document.getElementById('exClose').onclick=expClose;
+  document.getElementById('exRe').onclick=()=>{ md.style.display='none'; expSelectMode(true); toast('Drag a new rectangle on the map.',6000); };
+  document.getElementById('exView').onclick=()=>{ EXP.sel=map.getBounds(); if(EXP.rect){map.removeLayer(EXP.rect);EXP.rect=null;} expPreview(); };
+  document.getElementById('exPrev').onclick=expPreview;
+  ['exPaper','exBase','exSym','exN','exS','exG','exI','exL'].forEach(id=>document.getElementById(id).addEventListener('change',expPreview));
+  document.getElementById('exGo').onclick=expDownload;
+})();
+function expSelectMode(on){ document.getElementById('expOverlay').style.display=on?'block':'none'; }
+function expClose(){ document.getElementById('expModal').style.display='none'; if(EXP.rect){ map.removeLayer(EXP.rect); EXP.rect=null; } }
+function expVisible(){ return layers.filter(o=>o.visible&&o.leaf&&map.hasLayer(o.leaf)); }
+function expCleanName(n){ return n.replace(/\.tif$/i,'').replace(/\s*\((ADM\d|OSM|main|FABDEM 30 m|per union|union fill|upazila)\)/gi,'').replace(/_/g,' ').trim(); }
+function expOpen(){
+  const vis=expVisible();
+  const t=document.getElementById('exTitle');
+  if(!t.value){ const pr=vis.filter(o=>o.group==='priority'); t.value=pr.length?'Landslide Priority Areas for Nature-based Solutions\n'+(EXP.sel?'Chattogram Region and Chattogram Hill Tracts (CHT)':''):'Map of the Chattogram Region and Chattogram Hill Tracts (CHT)'; }
+  const s=document.getElementById('exSrc'); if(!s.value) s.value='RIMES NBS layers (LSI 2026, LULC change 2016 to 2026), BMD landslide inventory 2026, TDX-Hydro, OSM, BBS 2022, UNDP CVI';
+  const f=document.getElementById('exFoot'); if(!f.value) f.value='This map was generated with the technical support of Regional Integrated Multi-Hazard Early Warning System (RIMES)';
+  document.getElementById('exLeg').innerHTML=vis.length?vis.map((o,i)=>`<label><input type="checkbox" data-li="${layers.indexOf(o)}" ${o.kind==='vector'&&o===window.lyrCvi?'':'checked'}>${o.name}</label>`).join(''):'<i>No layers are switched on.</i>';
+  document.getElementById('exLeg').querySelectorAll('input').forEach(c=>c.onchange=expPreview);
+  document.getElementById('expModal').style.display='flex'; expPreview(); }
+function expOpts(){ const g=id=>document.getElementById(id);
+  return {title:g('exTitle').value.trim(), paper:g('exPaper').value, dpi:+g('exDpi').value, fmt:g('exFmt').value, base:g('exBase').value,
+    sym:+g('exSym').value, north:g('exN').checked, scale:g('exS').checked, grid:g('exG').checked, inset:g('exI').checked, legend:g('exL').checked,
+    legLayers:[...g('exLeg').querySelectorAll('input:checked')].map(c=>layers[+c.dataset.li]).filter(Boolean),
+    src:g('exSrc').value.trim(), foot:g('exFoot').value.trim()}; }
+let expBusy=0;
+async function expPreview(){ if(!EXP.sel) return; const my=++expBusy; const m=document.getElementById('exMsg'); m.textContent='Drawing preview…';
+  try{ const o=expOpts(); o.dpi=Math.min(o.dpi,110); const cv=await expRender(o,t=>{ if(my===expBusy) m.textContent=t; }); if(my!==expBusy) return;
+    const host=document.getElementById('exCanvas'); host.innerHTML=''; host.appendChild(cv); m.textContent=''; }
+  catch(err){ console.error(err); m.textContent='Preview failed: '+err.message; } }
+async function expDownload(){ if(!EXP.sel) return; const m=document.getElementById('exMsg'), b=document.getElementById('exGo'); b.disabled=true;
+  try{ const o=expOpts(); m.textContent='Rendering full resolution…'; const cv=await expRender(o,t=>m.textContent=t);
+    const name=(o.title.split('\n')[0]||'map').replace(/[^\w\- ]+/g,'').trim().replace(/\s+/g,'_').slice(0,60)||'map';
+    if(o.fmt==='pdf'){ m.textContent='Building PDF…'; await expLoadJsPDF(); const [w,h]=EXP_PAPER[o.paper]; const pdf=new window.jspdf.jsPDF({orientation:w>h?'landscape':'portrait',unit:'mm',format:[w,h]});
+      pdf.addImage(cv.toDataURL('image/jpeg',0.95),'JPEG',0,0,w,h); pdf.save(name+'.pdf'); }
+    else { const type=o.fmt==='jpg'?'image/jpeg':'image/png'; const blob=await new Promise(r=>cv.toBlob(r,type,0.95)); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name+'.'+o.fmt; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),4000); }
+    m.textContent='Downloaded.'; setTimeout(()=>{ if(m.textContent==='Downloaded.') m.textContent=''; },3000); }
+  catch(err){ console.error(err); m.textContent='Export failed: '+err.message; }
+  b.disabled=false; }
+function expLoadJsPDF(){ if(window.jspdf) return Promise.resolve(); return new Promise((res,rej)=>{ const s=document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'; s.onload=res; s.onerror=()=>rej(new Error('could not load the PDF library (are you offline?). Choose PNG instead.')); document.head.appendChild(s); }); }
+
+/* ---- projection helpers (Web Mercator, world units 0..1) ---- */
+const mx=lng=>(lng+180)/360, my=lat=>{ const s=Math.sin(lat*Math.PI/180); return 0.5-Math.log((1+s)/(1-s))/(4*Math.PI); };
+function expImg(src,cors){ return new Promise(res=>{ const im=new Image(); if(cors) im.crossOrigin='anonymous'; const t=setTimeout(()=>res(null),20000); im.onload=()=>{clearTimeout(t);res(im);}; im.onerror=()=>{clearTimeout(t);res(null);}; im.src=src; }); }
+async function expTiles(ctx,base,V,S,box,prog){ const B=BASES[base]; if(!B) return; const maxZ=B.options.maxZoom||19;
+  let z=Math.max(0,Math.min(maxZ,Math.ceil(Math.log2(S/256)))); const span=()=>{ const n=2**z; return [Math.floor(V.x0*n),Math.floor(V.x1*n),Math.floor(V.y0*n),Math.floor(V.y1*n)]; };
+  let [a,b,c,d]=span(); while((b-a+1)*(d-c+1)>600&&z>0){ z--; [a,b,c,d]=span(); }
+  const n=2**z, ts=S/n, jobs=[]; let done=0, total=(b-a+1)*(d-c+1);
+  for(let x=a;x<=b;x++) for(let y=c;y<=d;y++){ if(y<0||y>=n) continue; const xx=((x%n)+n)%n;
+    const url=B._url.replace('{z}',z).replace('{x}',xx).replace('{y}',y).replace('{s}','a').replace('{r}','');
+    jobs.push(expImg(url,true).then(im=>{ done++; if(prog&&done%10===0) prog(`Loading basemap tiles ${done}/${total}…`); if(im) ctx.drawImage(im,box.x+(x/n-V.x0)*S,box.y+(y/n-V.y0)*S,ts+0.6,ts+0.6); })); }
+  await Promise.all(jobs); }
+function expDash(s,k){ return s?String(s).split(/[ ,]+/).filter(Boolean).map(v=>+v*k):[]; }
+function expStyle(ctx,o,k){ ctx.lineWidth=Math.max(0.3,(o.weight??3)*k); ctx.strokeStyle=o.color||'#3388ff'; ctx.setLineDash(expDash(o.dashArray,k)); ctx.lineCap=o.lineCap||'round'; ctx.lineJoin=o.lineJoin||'round'; }
+function expDrawLeaf(ctx,lyr,P,k,V,ext,S){
+  if(lyr instanceof L.ImageOverlay) return; // rasters handled per layer object
+  if(lyr instanceof L.Circle||lyr instanceof L.CircleMarker){ const c=lyr.getLatLng(); if(!ext.pad(0.05).contains(c)) return; const o=lyr.options; const p=P(c);
+    const r=lyr instanceof L.Circle?lyr.getRadius()/(40075016.686*Math.cos(c.lat*Math.PI/180))*S:(o.radius??10)*k;
+    ctx.beginPath(); ctx.arc(p[0],p[1],Math.max(0.5,r),0,2*Math.PI);
+    if(o.fill!==false){ ctx.globalAlpha=o.fillOpacity??0.2; ctx.fillStyle=o.fillColor||o.color; ctx.fill(); }
+    if(o.stroke!==false&&(o.weight??3)>0){ ctx.globalAlpha=o.opacity??1; expStyle(ctx,o,k); ctx.stroke(); } ctx.globalAlpha=1; return; }
+  if(lyr instanceof L.Polyline){ if(lyr.getBounds&&!lyr.getBounds().intersects(ext)) return; const o=lyr.options; const poly=lyr instanceof L.Polygon;
+    let lls=lyr.getLatLngs(); const rings=[]; (function walk(a){ if(!a.length) return; if(a[0] instanceof L.LatLng) rings.push(a); else a.forEach(walk); })(lls);
+    ctx.beginPath(); rings.forEach(r=>{ r.forEach((q,i)=>{ const p=P(q); i?ctx.lineTo(p[0],p[1]):ctx.moveTo(p[0],p[1]); }); if(poly) ctx.closePath(); });
+    if(poly&&o.fill!==false&&(o.fillOpacity??0.2)>0){ ctx.globalAlpha=o.fillOpacity??0.2; ctx.fillStyle=o.fillColor||o.color; ctx.fill('evenodd'); }
+    if(o.stroke!==false&&(o.weight??3)>0&&(o.opacity??1)>0){ ctx.globalAlpha=o.opacity??1; expStyle(ctx,o,k); ctx.stroke(); } ctx.globalAlpha=1; return; }
+  if(lyr.eachLayer) lyr.eachLayer(s=>expDrawLeaf(ctx,s,P,k,V,ext,S)); }
+async function expDrawLayer(ctx,o,P,k,V,ext,S,box){
+  if(o.kind==='raster'||o.leaf instanceof L.ImageOverlay){ const lf=o.leaf; let src, bb;
+    if(o.urls&&o.builtinKey){ src=o.urls.hi; const b=DATA.bounds[o.builtinKey]; bb=[b[0],b[1],b[2],b[3]]; } else { src=lf._url||(lf._image&&lf._image.src); const g=lf.getBounds(); bb=[g.getWest(),g.getSouth(),g.getEast(),g.getNorth()]; }
+    const im=await expImg(src,false); if(!im) return; const x0=P([bb[3],bb[0]]), x1=P([bb[1],bb[2]]);
+    ctx.save(); ctx.globalAlpha=lf.options.opacity??o.opacity??1; ctx.imageSmoothingEnabled=false; ctx.drawImage(im,x0[0],x0[1],x1[0]-x0[0],x1[1]-x0[1]); ctx.restore(); return; }
+  ctx.save(); expDrawLeaf(ctx,o.leaf,P,k,V,ext,S); ctx.restore(); }
+
+/* ---- legend items parsed from each layer's own legend ---- */
+function expLegendItems(o){ const div=document.createElement('div'); try{ div.innerHTML=legendHTML(o)||''; }catch(e){ return {items:[]}; }
+  const out=[]; let sub=null;
+  div.querySelectorAll('.vh,.li').forEach(el=>{
+    if(el.classList.contains('vh')){ sub=el.textContent.replace(/\s*\(.*?\)\s*/g,' ').replace(/^Colour:\s*/i,'').trim(); if(sub) out.push({head:sub}); return; }
+    if(el.querySelector('select,button')) return; const cb=el.querySelector('input[type=checkbox]'); if(cb&&!cb.checked) return;
+    const sw=el.querySelector('.csw,.ramp,.pt,.sw'); if(!sw||sw.classList.contains('none')) return;
+    const c=el.cloneNode(true); let extra=''; c.querySelectorAll('span[style*="margin-left:auto"]').forEach(s=>{ extra=s.textContent.trim(); s.remove(); });
+    const label=c.textContent.replace(/\s+/g,' ').trim()+(extra?` (${extra})`:''); const st=sw.style;
+    let it={label};
+    if(sw.classList.contains('ramp')){ it.type='ramp'; it.cols=(st.backgroundImage.match(/rgba?\([^)]*\)|#[0-9a-f]{3,8}/gi)||[]); }
+    else if(sw.classList.contains('line')){ it.type='line'; it.color=st.borderTopColor||st.borderColor||'#000'; it.w=parseFloat(st.borderTopWidth)||2; it.dash=/dashed/.test(st.borderTopStyle||st.borderStyle); }
+    else if(sw.classList.contains('pt')){ it.type='pt'; it.color=st.backgroundColor||'#fff'; it.size=parseFloat(st.width)||10; const bm=(st.border||'').match(/(rgba?\([^)]*\)|#[0-9a-f]{3,8})/i); it.edge=bm?bm[1]:'#333'; if(/fff|255, 255, 255/.test(it.color)&&bm) it.ring=true; }
+    else { it.type='fill'; it.color=st.backgroundColor||st.background||'#ccc'; }
+    out.push(it); });
+  const items=out.filter(x=>!x.head);
+  return {items:out, single:items.length===1&&!out.some(x=>x.head)}; }
+function expWrap(ctx,text,maxW){ const words=text.split(/\s+/); const lines=[]; let cur='';
+  words.forEach(w=>{ const t=cur?cur+' '+w:w; if(ctx.measureText(t).width>maxW&&cur){ lines.push(cur); cur=w; } else cur=t; }); if(cur) lines.push(cur); return lines; }
+
+/* ---- graticule label ---- */
+function expDMS(v,ax){ const h=ax==='x'?(v>=0?'E':'W'):(v>=0?'N':'S'); v=Math.abs(v); let d=Math.floor(v+1e-9), m=Math.round((v-d)*60); if(m===60){d++;m=0;} return `${d}°${m}'${h}`; }
+
+/* ---- main renderer ---- */
+async function expRender(O,prog){
+  await Promise.race([document.fonts.load(`600 40px Poppins`),new Promise(r=>setTimeout(r,2500))]);
+  const [Wmm,Hmm]=EXP_PAPER[O.paper], mm=v=>v*O.dpi/25.4, W=Math.round(mm(Wmm)), H=Math.round(mm(Hmm)), k=O.dpi/96;
+  const cv=document.createElement('canvas'); cv.width=W; cv.height=H; const ctx=cv.getContext('2d');
+  ctx.fillStyle='#fff'; ctx.fillRect(0,0,W,H);
+  // title
+  const titleLines=O.title?O.title.split('\n').map(s=>s.trim()).filter(Boolean):[];
+  const tf=mm(Math.min(Wmm,Hmm)*0.032); ctx.fillStyle='#000'; ctx.textAlign='center'; ctx.textBaseline='alphabetic'; ctx.font=`600 ${tf}px ${EXP_FONT}`;
+  let ty=mm(9)+tf*0.8; const tl=[]; titleLines.forEach(l=>expWrap(ctx,l,W-mm(30)).forEach(x=>tl.push(x)));
+  tl.forEach(l=>{ ctx.fillText(l,W/2,ty); ty+=tf*1.35; });
+  const lab=mm(2.6), gap=O.grid?mm(7):mm(3);
+  const box={x:mm(14),y:(tl.length?ty-tf*0.35:mm(10))+gap, x2:W-mm(14)}; const footH=O.foot?mm(9):mm(3);
+  box.y2=H-footH-(O.grid?mm(7):mm(3)); box.w=box.x2-box.x; box.h=box.y2-box.y;
+  // view: fit selection into frame, centred
+  const sel=EXP.sel; let vx0=mx(sel.getWest()), vx1=mx(sel.getEast()), vy0=my(sel.getNorth()), vy1=my(sel.getSouth());
+  const S=Math.min(box.w/(vx1-vx0), box.h/(vy1-vy0)); const cx=(vx0+vx1)/2, cy=(vy0+vy1)/2;
+  const V={x0:cx-box.w/2/S, x1:cx+box.w/2/S, y0:cy-box.h/2/S, y1:cy+box.h/2/S};
+  const unY=y=>Math.atan(Math.sinh(Math.PI*(1-2*y)))*180/Math.PI, unX=x=>x*360-180;
+  const ext=L.latLngBounds([unY(V.y1),unX(V.x0)],[unY(V.y0),unX(V.x1)]);
+  const P=q=>{ const la=q.lat!==undefined?q.lat:q[0], ln=q.lng!==undefined?q.lng:q[1]; return [box.x+(mx(ln)-V.x0)*S, box.y+(my(la)-V.y0)*S]; };
+  // map body
+  ctx.save(); ctx.beginPath(); ctx.rect(box.x,box.y,box.w,box.h); ctx.clip(); ctx.fillStyle='#f2f2f0'; ctx.fillRect(box.x,box.y,box.w,box.h);
+  const baseKey=O.base==='cur'?document.getElementById('basemap').value:O.base;
+  if(baseKey&&baseKey!=='none'){ prog&&prog('Loading basemap tiles…'); await expTiles(ctx,baseKey,V,S,box,prog); }
+  const vis=expVisible().slice().reverse(); prog&&prog('Drawing layers…');
+  for(const o of vis) await expDrawLayer(ctx,o,P,k*O.sym,V,ext,S,box);
+  ctx.restore();
+  // frame + graticule
+  ctx.strokeStyle='#000'; ctx.setLineDash([]); ctx.lineWidth=Math.max(1,mm(0.35)); ctx.strokeRect(box.x,box.y,box.w,box.h);
+  if(O.grid){ const lonSpan=ext.getEast()-ext.getWest(), latSpan=ext.getNorth()-ext.getSouth();
+    const steps=[1,2,5,10,15,20,30,60,120,180,300,600]; const pick=span=>{ for(const s of steps){ if(span*60/s<=6) return s/60; } return 10; };
+    const ds=pick(lonSpan), dl=pick(latSpan); const t1=mm(2.2), t2=mm(1.1);
+    ctx.fillStyle='#000'; ctx.font=`400 ${lab}px ${EXP_FONT}`; ctx.lineWidth=Math.max(1,mm(0.2));
+    const line=(x1,y1,x2,y2)=>{ ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke(); };
+    for(let v=Math.ceil(ext.getWest()/(ds/5))*(ds/5); v<=ext.getEast(); v+=ds/5){ const x=P([0,v])[0]; const major=Math.abs(v/ds-Math.round(v/ds))<1e-6; const t=major?t1:t2;
+      line(x,box.y,x,box.y-t); line(x,box.y2,x,box.y2+t);
+      if(major){ ctx.textAlign='center'; ctx.textBaseline='bottom'; ctx.fillText(expDMS(v,'x'),x,box.y-t1-mm(0.6)); ctx.textBaseline='top'; ctx.fillText(expDMS(v,'x'),x,box.y2+t1+mm(0.6)); } }
+    for(let v=Math.ceil(ext.getSouth()/(dl/5))*(dl/5); v<=ext.getNorth(); v+=dl/5){ const y=P([v,0])[1]; const major=Math.abs(v/dl-Math.round(v/dl))<1e-6; const t=major?t1:t2;
+      line(box.x,y,box.x-t,y); line(box.x2,y,box.x2+t,y);
+      if(major){ const s=expDMS(v,'y'); ctx.textAlign='center'; ctx.textBaseline='bottom';
+        ctx.save(); ctx.translate(box.x-t1-mm(0.6),y); ctx.rotate(-Math.PI/2); ctx.fillText(s,0,0); ctx.restore();
+        ctx.save(); ctx.translate(box.x2+t1+mm(0.6),y); ctx.rotate(Math.PI/2); ctx.fillText(s,0,0); ctx.restore(); } } }
+  const U=Math.min(box.w,box.h);
+  // north arrow
+  if(O.north){ const ax=box.x+U*0.09, ay=box.y+U*0.05, h=U*0.11, w=h*0.42;
+    ctx.fillStyle='rgba(255,255,255,0.75)'; ctx.fillRect(ax-w*0.85,ay-h*0.06,w*1.7,h*1.42);
+    ctx.fillStyle='#000'; ctx.font=`400 ${h*0.36}px "Times New Roman", serif`; ctx.textAlign='center'; ctx.textBaseline='top'; ctx.fillText('N',ax,ay);
+    const y0=ay+h*0.42; ctx.beginPath(); ctx.moveTo(ax,y0); ctx.lineTo(ax+w/2,y0+h*0.9); ctx.lineTo(ax,y0+h*0.68); ctx.lineTo(ax-w/2,y0+h*0.9); ctx.closePath(); ctx.fill(); }
+  // inset
+  if(O.inset){ const iw=U*0.3, ih=iw*1.05, ix=box.x2-iw-U*0.012, iy=box.y+U*0.012;
+    const BD=L.latLngBounds([20.55,87.9],[26.75,92.8]); const ivx0=mx(BD.getWest()), ivx1=mx(BD.getEast()), ivy0=my(BD.getNorth()), ivy1=my(BD.getSouth());
+    const IS=Math.min(iw/(ivx1-ivx0), ih/(ivy1-ivy0)); const icx=(ivx0+ivx1)/2, icy=(ivy0+ivy1)/2; const IV={x0:icx-iw/2/IS,x1:icx+iw/2/IS,y0:icy-ih/2/IS,y1:icy+ih/2/IS};
+    const ib={x:ix,y:iy,w:iw,h:ih}; const IP=q=>[ix+(mx(q[1])-IV.x0)*IS, iy+(my(q[0])-IV.y0)*IS];
+    ctx.save(); ctx.fillStyle='#fff'; ctx.fillRect(ix,iy,iw,ih); ctx.beginPath(); ctx.rect(ix,iy,iw,ih); ctx.clip();
+    await expTiles(ctx,'gray',IV,IS,ib,null);
+    ctx.fillStyle='#0b4ea2'; ctx.strokeStyle='#08306b'; ctx.lineWidth=Math.max(1,mm(0.15));
+    (DATA.adm2.features||[]).forEach(f=>{ const g=f.geometry; const polys=g.type==='Polygon'?[g.coordinates]:g.coordinates;
+      ctx.beginPath(); polys.forEach(p=>p.forEach(r=>r.forEach((c,i)=>{ const q=IP([c[1],c[0]]); i?ctx.lineTo(q[0],q[1]):ctx.moveTo(q[0],q[1]); }))); ctx.fill('evenodd'); ctx.stroke(); });
+    const a=IP([ext.getNorth(),ext.getWest()]), b=IP([ext.getSouth(),ext.getEast()]); ctx.strokeStyle='#e31a1c'; ctx.lineWidth=Math.max(1.5,mm(0.45)); ctx.strokeRect(a[0],a[1],Math.max(3,b[0]-a[0]),Math.max(3,b[1]-a[1]));
+    ctx.restore(); ctx.strokeStyle='#000'; ctx.lineWidth=Math.max(1,mm(0.35)); ctx.strokeRect(ix,iy,iw,ih); }
+  // scale bar
+  if(O.scale){ const lat=(ext.getNorth()+ext.getSouth())/2; const mpp=40075016.686*Math.cos(lat*Math.PI/180)/S; const want=box.w*0.28*mpp/1000;
+    const nice=[0.2,0.4,0.8,1,2,4,6,8,10,12,20,40,60,80,100,120,200,400,600]; let km=nice[0]; nice.forEach(v=>{ if(v<=want) km=v; });
+    const len=km*1000/mpp, sh=mm(1.4), sx=box.x2-len-mm(24), sy=box.y2-mm(10); const fs=mm(3);
+    ctx.fillStyle='rgba(255,255,255,0.7)'; ctx.fillRect(sx-mm(4),sy-fs-mm(3),len+mm(22),sh*2+fs+mm(5));
+    const cuts=[0,1/8,1/4,3/8,1/2,3/4,1]; ctx.lineWidth=Math.max(1,mm(0.2)); ctx.strokeStyle='#000';
+    for(let i=0;i<cuts.length-1;i++) for(let r=0;r<2;r++){ const x=sx+cuts[i]*len, w=(cuts[i+1]-cuts[i])*len; ctx.fillStyle=((i+r)%2===0)?'#000':'#fff'; ctx.fillRect(x,sy+r*sh,w,sh); }
+    ctx.strokeRect(sx,sy,len,sh*2);
+    ctx.fillStyle='#000'; ctx.font=`400 ${fs}px ${EXP_FONT}`; ctx.textAlign='center'; ctx.textBaseline='bottom';
+    const fmtk=v=>(Math.round(v*100)/100).toString(); [0,0.25,0.5,1].forEach(f=>ctx.fillText(fmtk(km*f),sx+f*len,sy-mm(0.8)));
+    ctx.textAlign='left'; ctx.textBaseline='middle'; ctx.fillText('Kilometers',sx+len+mm(1.5),sy+sh); }
+  // legend
+  if(O.legend){ const fs=mm(3.1), rowH=fs*1.55, sw=fs*2.1, pad=mm(3.5), titleFs=mm(5);
+    const blocks=O.legLayers.filter(o=>expVisible().includes(o)).map(o=>{ const r=expLegendItems(o); return {o,...r}; }).filter(b=>b.items.length);
+    const rows=[]; blocks.forEach(b=>{ if(b.single){ const it=b.items[0]; rows.push({...it,label:expCleanName(b.o.name)}); return; }
+      rows.push({head:expCleanName(b.o.name),big:true}); b.items.forEach(it=>rows.push(it)); });
+    ctx.font=`400 ${fs}px ${EXP_FONT}`;
+    const maxH=box.h*0.52; let perCol=Math.max(1,Math.floor((maxH-titleFs*2-pad*2)/rowH)); const cols=Math.min(3,Math.ceil(rows.length/perCol)); perCol=Math.ceil(rows.length/cols);
+    const colW=[]; for(let c=0;c<cols;c++){ let w=0; rows.slice(c*perCol,(c+1)*perCol).forEach(r=>{ ctx.font=`${r.head?(r.big?'600':'500'):'400'} ${r.head&&r.big?fs*1.12:fs}px ${EXP_FONT}`; w=Math.max(w,ctx.measureText(r.label||r.head).width+(r.head?0:sw+mm(2.2))); }); colW.push(Math.min(w,box.w*0.42)); }
+    let lw=colW.reduce((a,b)=>a+b,0)+pad*2+mm(6)*(cols-1); lw=Math.max(lw,mm(48)); lw=Math.min(lw,box.w*0.9);
+    ctx.font=`400 ${fs*0.95}px ${EXP_FONT}`; const srcLines=O.src?expWrap(ctx,'Data Source: '+O.src,lw-pad*2):[];
+    const lh=pad+titleFs*1.5+perCol*rowH+(srcLines.length?mm(2)+srcLines.length*fs*1.35:0)+pad;
+    const lx=box.x+U*0.02, ly=box.y2-lh-U*0.02;
+    ctx.fillStyle='rgba(224,244,251,0.96)'; ctx.fillRect(lx,ly,lw,lh);
+    ctx.fillStyle='#000'; ctx.font=`700 ${titleFs}px ${EXP_FONT}`; ctx.textAlign='center'; ctx.textBaseline='top'; ctx.fillText('Legend',lx+lw/2,ly+pad);
+    let cx0=lx+pad; ctx.textAlign='left'; ctx.textBaseline='middle';
+    for(let c=0;c<cols;c++){ let y=ly+pad+titleFs*1.5; rows.slice(c*perCol,(c+1)*perCol).forEach(r=>{ const yc=y+rowH/2;
+        if(r.head){ ctx.fillStyle='#000'; ctx.font=`${r.big?'600':'500'} ${r.big?fs*1.12:fs}px ${EXP_FONT}`; ctx.fillText(r.head,cx0,yc); y+=rowH; return; }
+        const sx=cx0, sy=yc-fs*0.55, sh=fs*1.1; ctx.setLineDash([]);
+        if(r.type==='fill'){ ctx.fillStyle=r.color; ctx.fillRect(sx,sy,sw,sh); ctx.strokeStyle='#777'; ctx.lineWidth=Math.max(1,mm(0.15)); ctx.strokeRect(sx,sy,sw,sh); }
+        else if(r.type==='line'){ ctx.strokeStyle=r.color; ctx.lineWidth=Math.max(1,r.w*k*O.sym); ctx.setLineDash(r.dash?[mm(1.4),mm(0.8)]:[]); ctx.beginPath(); ctx.moveTo(sx,yc); ctx.lineTo(sx+sw,yc); ctx.stroke(); ctx.setLineDash([]); }
+        else if(r.type==='pt'){ const rr=Math.min(sh*0.55,Math.max(fs*0.25,r.size*k*0.5)); ctx.beginPath(); ctx.arc(sx+sw/2,yc,rr,0,2*Math.PI); ctx.fillStyle=r.ring?'#fff':r.color; ctx.fill(); ctx.strokeStyle=r.edge||'#333'; ctx.lineWidth=Math.max(1,mm(r.ring?0.4:0.15)); ctx.stroke(); }
+        else if(r.type==='ramp'){ const g=ctx.createLinearGradient(sx,0,sx+sw,0); r.cols.forEach((c2,i)=>g.addColorStop(r.cols.length>1?i/(r.cols.length-1):0,c2)); ctx.fillStyle=g; ctx.fillRect(sx,sy,sw,sh); }
+        ctx.fillStyle='#000'; ctx.font=`400 ${fs}px ${EXP_FONT}`; let t=r.label; while(ctx.measureText(t).width>colW[c]-sw-mm(2.2)&&t.length>4) t=t.slice(0,-2); if(t!==r.label) t=t.slice(0,-1)+'…';
+        ctx.fillText(t,sx+sw+mm(2.2),yc); y+=rowH; });
+      cx0+=colW[c]+mm(6); }
+    if(srcLines.length){ ctx.font=`400 ${fs*0.95}px ${EXP_FONT}`; ctx.textAlign='left'; ctx.textBaseline='top'; let y=ly+pad+titleFs*1.5+perCol*rowH+mm(2); srcLines.forEach(s=>{ ctx.fillText(s,lx+pad,y); y+=fs*1.35; }); } }
+  // footer
+  if(O.foot){ ctx.fillStyle='#000'; ctx.font=`400 ${mm(3.1)}px ${EXP_FONT}`; ctx.textAlign='center'; ctx.textBaseline='bottom'; const fl=expWrap(ctx,O.foot,W-mm(20)); let y=H-mm(3.5)-(fl.length-1)*mm(3.8); fl.forEach(s=>{ ctx.fillText(s,W/2,y); y+=mm(3.8); }); }
+  try{ ctx.getImageData(0,0,1,1); }catch(e){ throw new Error('the basemap blocked export. Choose Basemap: None and try again.'); }
+  return cv; }
 
 // drawing order (top first)
 [lyrDist,lyrUpz,lyrUnion,lyrPrioH,lyrPrioM,lyrInv,lyrInvBuf,lyrPts,lyrRoad,lyrStream,lyrPop,lyrHot,lyrLsi,lyrSlope,lyrChg,lyrCvi].forEach(o=>addLayerObj(o,false));
