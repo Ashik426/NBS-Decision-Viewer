@@ -804,6 +804,7 @@ table.rank tr.cur td{background:var(--sel)}
 @media (max-width:760px){#expModal .box{grid-template-columns:1fr}#expModal .prev{min-height:220px}}
 
 
+
 /* marks:start */
 #mkPanel{position:absolute;top:10px;right:10px;z-index:1550;width:330px;max-height:calc(100% - 20px);overflow:auto;background:#fff;border:1px solid #b9c3ce;border-radius:6px;box-shadow:0 4px 18px rgba(0,0,0,.22);font-size:12px;display:none}
 #mkPanel .hd{display:flex;align-items:center;gap:6px;padding:8px 10px;border-bottom:1px solid var(--line);position:sticky;top:0;background:#fff;z-index:1}
@@ -1352,6 +1353,7 @@ const lyrPrioM=prioLayer('prioM','Medium Priority Area','Medium',10);
 
 
 
+
 /* ================= Marked locations (shared) ================= */
 const MK={items:[], mode:'local', db:null, auth:null, user:null, unsub:null, color:'#e31a1c', w:3, dash:false, labels:true, editing:null, draft:null, msg:''};
 const MK_KEY='nbs_marks_v1';
@@ -1401,23 +1403,26 @@ function mkLoadScript(src){ return new Promise((res,rej)=>{ const s=document.cre
 async function mkInit(){ MK.items=mkLocalLoad().map(d=>mkFromDoc(d.id,d)).filter(Boolean); mkRedraw();
   try{ await mkLoadScript('firebase-config.js?v='+Date.now()); }catch(e){}
   const cfg=window.NBS_FIREBASE; if(!cfg||!cfg.apiKey){ MK.mode='local'; MK.msg=''; mkStatus(); return; }
-  try{ const v='10.12.2'; for(const m of ['app','auth','firestore']) await mkLoadScript(`https://www.gstatic.com/firebasejs/${v}/firebase-${m}-compat.js`);
-    firebase.initializeApp(cfg); MK.db=firebase.firestore(); MK.auth=firebase.auth(); MK.mode='cloud';
-    MK.auth.onAuthStateChanged(u=>{ MK.user=u; mkStatus(); });
-    MK.unsub=MK.db.collection('marks').onSnapshot(snap=>{ MK.items=snap.docs.map(d=>mkFromDoc(d.id,d.data())).filter(Boolean).sort((a,b)=>(a.created||'').localeCompare(b.created||'')); MK.msg=''; mkRedraw(); mkStatus(); },
-      err=>{ MK.msg='Could not read the shared database: '+err.message; mkStatus(); });
+  try{ const v='10.12.2'; MK.rt=!!cfg.databaseURL&&!cfg.useFirestore; for(const m of ['app','auth',MK.rt?'database':'firestore']) await mkLoadScript(`https://www.gstatic.com/firebasejs/${v}/firebase-${m}-compat.js`);
+    firebase.initializeApp(cfg); MK.auth=firebase.auth(); MK.mode='cloud';
+    MK.auth.onAuthStateChanged(u=>{ MK.user=u; mkStatus(); mkList(); });
+    const got=arr=>{ MK.items=arr.filter(Boolean).sort((a,b)=>(a.created||'').localeCompare(b.created||'')); MK.msg=''; mkRedraw(); mkStatus(); };
+    const bad=err=>{ MK.msg='Could not read the shared database: '+err.message; mkStatus(); };
+    if(MK.rt){ MK.ref=firebase.database().ref('marks'); MK.ref.on('value',snap=>{ const v=snap.val()||{}; got(Object.entries(v).map(([id,d])=>mkFromDoc(id,d))); },bad); }
+    else { MK.db=firebase.firestore(); MK.unsub=MK.db.collection('marks').onSnapshot(snap=>got(snap.docs.map(d=>mkFromDoc(d.id,d.data()))),bad); }
   }catch(e){ console.error(e); MK.mode='local'; MK.msg='Shared database not reachable ('+e.message+'). Marks are saved in this browser for now.'; }
   mkStatus(); }
 function mkCanEdit(){ return MK.mode==='local'||!!MK.user; }
 async function mkSaveItem(it){ const now=new Date().toISOString(); it.updated=now; if(!it.created) it.created=now;
   if(MK.mode==='cloud'){ if(!MK.user){ toast('Sign in first to save to the shared database.'); return false; } if(!it.by) it.by=MK.user.displayName||MK.user.email||'';
-    try{ if(it.id) await MK.db.collection('marks').doc(it.id).set(mkToDoc(it)); else { const r=await MK.db.collection('marks').add(mkToDoc(it)); it.id=r.id; } return true; }
+    try{ if(MK.rt){ if(it.id) await MK.ref.child(it.id).set(mkToDoc(it)); else { const r=MK.ref.push(); await r.set(mkToDoc(it)); it.id=r.key; } return true; }
+      if(it.id) await MK.db.collection('marks').doc(it.id).set(mkToDoc(it)); else { const r=await MK.db.collection('marks').add(mkToDoc(it)); it.id=r.id; } return true; }
     catch(e){ toast('Save failed: '+e.message,7000); return false; } }
   if(!it.id){ it.id='L'+Date.now().toString(36)+Math.random().toString(36).slice(2,6); MK.items.push(it); }
   else { const i=MK.items.findIndex(x=>x.id===it.id); if(i>=0) MK.items[i]=it; }
   mkLocalSave(MK.items.map(x=>Object.assign({id:x.id},mkToDoc(x)))); mkRedraw(); return true; }
 async function mkDelete(it){ if(!confirm(`Delete the marked location "${it.name}"? This cannot be undone.`)) return;
-  if(MK.mode==='cloud'){ if(!MK.user){ toast('Sign in first.'); return; } try{ await MK.db.collection('marks').doc(it.id).delete(); }catch(e){ toast('Delete failed: '+e.message,7000); } return; }
+  if(MK.mode==='cloud'){ if(!MK.user){ toast('Sign in first.'); return; } try{ if(MK.rt) await MK.ref.child(it.id).remove(); else await MK.db.collection('marks').doc(it.id).delete(); map.closePopup(); }catch(e){ toast('Delete failed: '+e.message,7000); } return; }
   MK.items=MK.items.filter(x=>x.id!==it.id); mkLocalSave(MK.items.map(x=>Object.assign({id:x.id},mkToDoc(x)))); mkRedraw(); map.closePopup(); }
 async function mkSignIn(){ try{ await MK.auth.signInWithPopup(new firebase.auth.GoogleAuthProvider()); }catch(e){ toast('Sign-in failed: '+e.message,7000); } }
 async function mkUploadLocal(){ const loc=mkLocalLoad(); if(!loc.length||MK.mode!=='cloud'||!MK.user) return; let n=0;
