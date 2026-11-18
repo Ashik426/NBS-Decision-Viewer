@@ -805,6 +805,7 @@ table.rank tr.cur td{background:var(--sel)}
 
 
 
+
 /* marks:start */
 #mkPanel{position:absolute;top:10px;right:10px;z-index:1550;width:330px;max-height:calc(100% - 20px);overflow:auto;background:#fff;border:1px solid #b9c3ce;border-radius:6px;box-shadow:0 4px 18px rgba(0,0,0,.22);font-size:12px;display:none}
 #mkPanel .hd{display:flex;align-items:center;gap:6px;padding:8px 10px;border-bottom:1px solid var(--line);position:sticky;top:0;background:#fff;z-index:1}
@@ -1354,6 +1355,7 @@ const lyrPrioM=prioLayer('prioM','Medium Priority Area','Medium',10);
 
 
 
+
 /* ================= Marked locations (shared) ================= */
 const MK={items:[], mode:'local', db:null, auth:null, user:null, unsub:null, color:'#e31a1c', w:3, dash:false, labels:true, editing:null, draft:null, msg:''};
 const MK_KEY='nbs_marks_v1';
@@ -1424,7 +1426,7 @@ async function mkSaveItem(it){ const now=new Date().toISOString(); it.updated=no
 async function mkDelete(it){ if(!confirm(`Delete the marked location "${it.name}"? This cannot be undone.`)) return;
   if(MK.mode==='cloud'){ if(!MK.user){ toast('Sign in first.'); return; } try{ if(MK.rt) await MK.ref.child(it.id).remove(); else await MK.db.collection('marks').doc(it.id).delete(); map.closePopup(); }catch(e){ toast('Delete failed: '+e.message,7000); } return; }
   MK.items=MK.items.filter(x=>x.id!==it.id); mkLocalSave(MK.items.map(x=>Object.assign({id:x.id},mkToDoc(x)))); mkRedraw(); map.closePopup(); }
-async function mkSignIn(){ try{ await MK.auth.signInWithPopup(new firebase.auth.GoogleAuthProvider()); }catch(e){ toast('Sign-in failed: '+e.message,7000); } }
+async function mkSignIn(){ try{ await MK.auth.signInWithPopup(new firebase.auth.GoogleAuthProvider()); }catch(e){ if(/popup-closed|cancelled-popup/.test(e.code||'')) return; toast(/popup-blocked/.test(e.code||'')?'Your browser blocked the Google sign-in window. Allow pop-ups for this site (icon at the right of the address bar), then click Sign in again.':'Sign-in failed: '+e.message,9000); } }
 async function mkUploadLocal(){ const loc=mkLocalLoad(); if(!loc.length||MK.mode!=='cloud'||!MK.user) return; let n=0;
   for(const d of loc){ const it=mkFromDoc(null,d); if(!it) continue; it.id=null; if(await mkSaveItem(it)) n++; }
   if(n===loc.length) localStorage.removeItem(MK_KEY); toast(`Uploaded ${n} mark${n===1?'':'s'} to the shared database.`); mkStatus(); }
