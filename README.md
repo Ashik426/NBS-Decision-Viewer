@@ -1,5 +1,7 @@
 # NBS Hill Districts Decision Viewer
 
+**🌐 Live view: [https://ashik426.github.io/NBS-Decision-Viewer/](https://ashik426.github.io/NBS-Decision-Viewer/)**
+
 Web map of High and Medium Priority Areas (tree loss or new settlement in High/Medium landslide susceptibility, within 5 km / 10 km of a previous landslide, classed by distance to stream), plus landslide susceptibility, LULC change 2016 to 2026, slope, roads, population, main streams, previous landslide inventory (with 5 m buffer) and UNDP CVI by union (ADM4) for the Chittagong Hill Tracts, Chittagong and Cox's Bazar.
 
 Open `index.html` in a browser, or view it on GitHub Pages.
