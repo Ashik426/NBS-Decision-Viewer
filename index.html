@@ -806,6 +806,7 @@ table.rank tr.cur td{background:var(--sel)}
 
 
 
+
 /* marks:start */
 #mkPanel{position:absolute;top:10px;right:10px;z-index:1550;width:330px;max-height:calc(100% - 20px);overflow:auto;background:#fff;border:1px solid #b9c3ce;border-radius:6px;box-shadow:0 4px 18px rgba(0,0,0,.22);font-size:12px;display:none}
 #mkPanel .hd{display:flex;align-items:center;gap:6px;padding:8px 10px;border-bottom:1px solid var(--line);position:sticky;top:0;background:#fff;z-index:1}
@@ -832,6 +833,9 @@ table.rank tr.cur td{background:var(--sel)}
 #mkPanel .it button{padding:1px 6px}
 #mkPanel .form{border:1px solid #c9d6e2;background:#f7fafc;border-radius:4px;padding:6px 8px;margin:6px 0}
 #mkPanel .note{font-size:10.5px;color:var(--muted)}
+.mkLeg{max-height:240px;overflow:auto;padding-right:4px}
+.mkLeg .li{cursor:pointer;border-radius:3px}
+.mkLeg .li:hover{background:#eef3f8;color:#0f6fc6}
 .mkLabel{background:transparent;border:0;box-shadow:none;font-weight:600;font-size:11.5px;color:#111;text-shadow:0 0 3px #fff,0 0 3px #fff,0 0 2px #fff;padding:0}
 .mkLabel:before{display:none}
 .mkPop b{font-size:13px}.mkPop .k{color:#5f6b7a}.mkPop .bt{display:flex;gap:5px;margin-top:6px}
@@ -1356,6 +1360,7 @@ const lyrPrioM=prioLayer('prioM','Medium Priority Area','Medium',10);
 
 
 
+
 /* ================= Marked locations (shared) ================= */
 const MK={items:[], mode:'local', db:null, auth:null, user:null, unsub:null, color:'#e31a1c', w:3, dash:false, labels:true, editing:null, draft:null, msg:''};
 const MK_KEY='nbs_marks_v1';
@@ -1375,11 +1380,18 @@ function mkShape(it){ const s=mkStyle(it), g=it.geom;
   else l.bindTooltip(mkEsc(it.name),{sticky:true});
   l.on('click',e=>{ L.DomEvent.stopPropagation(e); mkPopup(it,e.latlng); }); l._mk=it; return l; }
 lyrMarks.build=function(){ lyrMarks.leaf=L.featureGroup(); mkRedraw(); };
-function mkRedraw(){ if(!lyrMarks.leaf) return; lyrMarks.leaf.clearLayers(); MK.items.forEach(it=>{ try{ lyrMarks.leaf.addLayer(mkShape(it)); }catch(e){ console.warn('bad mark',it,e); } });
+const mkKey=n=>String(n||'').replace(/\s+/g,'').toLowerCase();
+function mkSort(){ MK.items.sort((a,b)=>mkKey(a.name).localeCompare(mkKey(b.name),undefined,{numeric:true})||(a.created||'').localeCompare(b.created||'')); }
+function mkRedraw(){ if(!lyrMarks.leaf) return; mkSort(); lyrMarks.leaf.clearLayers(); MK.items.forEach(it=>{ try{ lyrMarks.leaf.addLayer(mkShape(it)); }catch(e){ console.warn('bad mark',it,e); } });
   if(typeof renderTree==='function'&&layers.includes(lyrMarks)) renderTree(); mkList(); }
 lyrMarks.legendFn=()=>{ if(!MK.items.length) return `<div style="font-size:11px;color:#5f6b7a">No marked locations yet. Use <b>Mark Location</b> in the toolbar.</div>`;
-  return `<div class="vh">${MK.items.length} marked location${MK.items.length===1?'':'s'} (${MK.mode==='cloud'?'shared':'this browser only'})</div>`+MK.items.slice(0,40).map(it=>
-    `<div class="li"><span class="${it.type==='line'?'sw line':'sw'}" style="${it.type==='line'?`border-color:${it.color};border-top-width:${Math.min(4,it.w||3)}px`:`background:${it.color}33;border:2px solid ${it.color};${it.type==='circle'?'border-radius:50%':''}`}"></span>${mkEsc(it.name)}</div>`).join('')+(MK.items.length>40?`<div style="font-size:11px;color:#5f6b7a">and ${MK.items.length-40} more</div>`:''); };
+  return `<div class="vh">${MK.items.length} marked location${MK.items.length===1?'':'s'} (${MK.mode==='cloud'?'shared':'this browser only'})</div>`+`<div class="mkLeg">`+MK.items.map(it=>
+    `<div class="li" data-mkid="${it.id}" title="Click to zoom to this mark"><span class="${it.type==='line'?'sw line':'sw'}" style="${it.type==='line'?`border-color:${it.color};border-top-width:${Math.min(4,it.w||3)}px`:`background:${it.color}33;border:2px solid ${it.color};${it.type==='circle'?'border-radius:50%':''}`}"></span>${mkEsc(it.name)}</div>`).join('')+`</div>`; };
+lyrMarks.afterLegend=el=>el.querySelectorAll('[data-mkid]').forEach(r=>r.onclick=e=>{ e.stopPropagation(); const it=MK.items.find(x=>x.id===r.dataset.mkid); if(it) mkGoto(it); });
+function mkGoto(it){ if(!lyrMarks.visible){ setVis(lyrMarks,true); renderTree(); }
+  map.invalidateSize(); map.fitBounds(mkBounds(it).pad(0.6),{maxZoom:16,animate:false});
+  mkPopup(it,L.latLng(mkCenter(it)));
+  lyrMarks.leaf.eachLayer(l=>{ if(l._mk&&l._mk.id===it.id){ l.bringToFront(); const w=it.w||3; let n=0; const iv=setInterval(()=>{ n++; l.setStyle({weight:n%2?w+5:w}); if(n>=6){ clearInterval(iv); l.setStyle({weight:w}); } },250); } }); }
 lyrMarks.identify=ll=>{ const it=mkHit(ll); return it?[['Marked location',it.name],['Union',it.union||'-'],['Note',it.note||'-']]:null; };
 function mkHit(ll){ let best=null, bd=1e9; MK.items.forEach(it=>{ const g=it.geom; let d;
     if(it.type==='circle') d=Math.max(0,map.distance(ll,g.c)-g.r); else if(it.type==='rect') d=L.latLngBounds(g.b).contains(ll)?0:1e9;
@@ -1408,7 +1420,7 @@ async function mkInit(){ MK.items=mkLocalLoad().map(d=>mkFromDoc(d.id,d)).filter
   try{ const v='10.12.2'; MK.rt=!!cfg.databaseURL&&!cfg.useFirestore; for(const m of ['app','auth',MK.rt?'database':'firestore']) await mkLoadScript(`https://www.gstatic.com/firebasejs/${v}/firebase-${m}-compat.js`);
     firebase.initializeApp(cfg); MK.auth=firebase.auth(); MK.mode='cloud';
     MK.auth.onAuthStateChanged(u=>{ MK.user=u; mkStatus(); mkList(); });
-    const got=arr=>{ MK.items=arr.filter(Boolean).sort((a,b)=>(a.created||'').localeCompare(b.created||'')); MK.msg=''; mkRedraw(); mkStatus(); };
+    const got=arr=>{ MK.items=arr.filter(Boolean); MK.msg=''; mkRedraw(); mkStatus(); };
     const bad=err=>{ MK.msg='Could not read the shared database: '+err.message; mkStatus(); };
     if(MK.rt){ MK.ref=firebase.database().ref('marks'); MK.ref.on('value',snap=>{ const v=snap.val()||{}; got(Object.entries(v).map(([id,d])=>mkFromDoc(id,d))); },bad); }
     else { MK.db=firebase.firestore(); MK.unsub=MK.db.collection('marks').onSnapshot(snap=>got(snap.docs.map(d=>mkFromDoc(d.id,d.data()))),bad); }
@@ -1417,8 +1429,9 @@ async function mkInit(){ MK.items=mkLocalLoad().map(d=>mkFromDoc(d.id,d)).filter
 function mkCanEdit(){ return MK.mode==='local'||!!MK.user; }
 async function mkSaveItem(it){ const now=new Date().toISOString(); it.updated=now; if(!it.created) it.created=now;
   if(MK.mode==='cloud'){ if(!MK.user){ toast('Sign in first to save to the shared database.'); return false; } if(!it.by) it.by=MK.user.displayName||MK.user.email||'';
-    try{ if(MK.rt){ if(it.id) await MK.ref.child(it.id).set(mkToDoc(it)); else { const r=MK.ref.push(); await r.set(mkToDoc(it)); it.id=r.key; } return true; }
-      if(it.id) await MK.db.collection('marks').doc(it.id).set(mkToDoc(it)); else { const r=await MK.db.collection('marks').add(mkToDoc(it)); it.id=r.id; } return true; }
+    const show=()=>{ const i=MK.items.findIndex(x=>x.id===it.id); if(i>=0) MK.items[i]=Object.assign({},it); else MK.items.push(Object.assign({},it)); mkRedraw(); };
+    try{ if(MK.rt){ if(it.id) await MK.ref.child(it.id).set(mkToDoc(it)); else { const r=MK.ref.push(); await r.set(mkToDoc(it)); it.id=r.key; } show(); return true; }
+      if(it.id) await MK.db.collection('marks').doc(it.id).set(mkToDoc(it)); else { const r=await MK.db.collection('marks').add(mkToDoc(it)); it.id=r.id; } show(); return true; }
     catch(e){ toast('Save failed: '+e.message,7000); return false; } }
   if(!it.id){ it.id='L'+Date.now().toString(36)+Math.random().toString(36).slice(2,6); MK.items.push(it); }
   else { const i=MK.items.findIndex(x=>x.id===it.id); if(i>=0) MK.items[i]=it; }
@@ -1466,7 +1479,7 @@ function mkList(){ const el=document.getElementById('mkList'); if(!el) return; c
   const its=MK.items.filter(it=>!q||[it.name,it.union,it.upazila,it.district,it.note].join(' ').toLowerCase().includes(q));
   document.getElementById('mkCount').textContent=`${its.length} of ${MK.items.length}`;
   el.innerHTML=its.length?its.map(it=>`<div class="it" data-id="${it.id}"><span class="ic" style="color:${it.color}">${MK_ICON[it.type]}</span><div class="nm"><div>${mkEsc(it.name)}</div><small>${mkEsc([it.union,it.upazila].filter(Boolean).join(', ')||'outside the study area')}</small></div>${mkCanEdit()?`<button class="sbtn" data-ed="${it.id}" title="Edit">✎</button><button class="sbtn" data-del="${it.id}" title="Delete">×</button>`:''}</div>`).join(''):'<div class="note" style="padding:6px">No marked locations.</div>';
-  el.querySelectorAll('.it').forEach(r=>r.onclick=e=>{ if(e.target.closest('button')) return; const it=MK.items.find(x=>x.id===r.dataset.id); if(it){ map.fitBounds(mkBounds(it).pad(0.6),{maxZoom:16}); mkPopup(it,L.latLng(mkCenter(it))); } });
+  el.querySelectorAll('.it').forEach(r=>r.onclick=e=>{ if(e.target.closest('button')) return; const it=MK.items.find(x=>x.id===r.dataset.id); if(it) mkGoto(it); });
   el.querySelectorAll('[data-ed]').forEach(b=>b.onclick=()=>mkForm(MK.items.find(x=>x.id===b.dataset.ed)));
   el.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>mkDelete(MK.items.find(x=>x.id===b.dataset.del))); }
 function mkPopup(it,ll){ const h=`<div class="mkPop"><b style="color:${it.color}">${MK_ICON[it.type]}</b> <b>${mkEsc(it.name)}</b><br>
@@ -1489,7 +1502,7 @@ function mkForm(it){ // it = existing mark, or a new draft (no id)
   f.querySelector('#mkCancel').onclick=mkFormClose;
   f.querySelector('#mkSave').onclick=async()=>{ e.name=f.querySelector('#mkN').value.trim(); e.note=f.querySelector('#mkNote').value.trim();
     if(!e.name){ toast('Give the mark a name.'); f.querySelector('#mkN').focus(); return; }
-    const b=f.querySelector('#mkSave'); b.disabled=true; b.textContent='Saving…'; const ok=await mkSaveItem(e); if(ok){ MK.color=e.color; MK.w=e.w; MK.dash=e.dash; mkFormClose(); toast(`Saved "${e.name}".`); } else { b.disabled=false; b.textContent='Save'; } };
+    const b=f.querySelector('#mkSave'); b.disabled=true; b.textContent='Saving…'; const ok=await mkSaveItem(e); if(ok){ map.closePopup(); MK.color=e.color; MK.w=e.w; MK.dash=e.dash; mkFormClose(); toast(`Saved "${e.name}".`); } else { b.disabled=false; b.textContent='Save'; } };
   mkPreviewDraft(); setTimeout(()=>f.querySelector('#mkN').focus(),50); f.scrollIntoView({block:'nearest'}); }
 function mkPreviewDraft(){ if(MK.draft){ map.removeLayer(MK.draft); MK.draft=null; } const e=MK.editing; if(!e) return; MK.draft=mkShape(Object.assign({},e,{name:''})).addTo(map); }
 function mkFormClose(){ MK.editing=null; if(MK.draft){ map.removeLayer(MK.draft); MK.draft=null; } const f=document.getElementById('mkForm'); f.style.display='none'; f.innerHTML=''; }
