@@ -2,7 +2,7 @@
    This web config is not a secret; access is controlled by the database security rules
    (read: everyone, write: signed-in users). */
 window.NBS_FIREBASE = {
-  apiKey: "AIzaSyBx5yVxkyLwNNwlImrway8JzEK5qAVxWZ0",
+  apiKey: "AIzaSyCyhhShBW0GNvYAEAEpjPEWIE9SosIN-Vs",
   authDomain: "nbs-marks.firebaseapp.com",
   databaseURL: "https://nbs-marks-default-rtdb.asia-southeast1.firebasedatabase.app",
   projectId: "nbs-marks",
